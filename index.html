@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Printable Gear Train & Compatibility Studio</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/STLExporter.js"></script>
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --panel-bg: #1e293b;
+      --card-bg: #334155;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --err: #ef4444;
+      --border: #475569;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+    body { display: flex; height: 100vh; width: 100vw; overflow: hidden; background: var(--bg-dark); color: var(--text-main); }
+    
+    /* Left Sidebar Controls */
+    #sidebar {
+      width: 390px;
+      min-width: 390px;
+      height: 100vh;
+      background: var(--panel-bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 16px;
+      gap: 16px;
+      z-index: 10;
+    }
+    h1 { font-size: 1.15rem; font-weight: 700; color: var(--accent); letter-spacing: 0.3px; }
+    h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 10px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+    .section { background: rgba(15, 23, 42, 0.45); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+    
+    .control-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; }
+    .control-row:last-child { margin-bottom: 0; }
+    .control-row label { font-size: 0.82rem; color: var(--text-main); flex: 1; }
+    .control-row input[type="number"], .control-row select {
+      width: 110px; padding: 5px 8px; background: var(--bg-dark); border: 1px solid var(--border);
+      color: var(--text-main); border-radius: 4px; font-size: 0.82rem;
+    }
+    .control-row input[type="range"] { flex: 1; accent-color: var(--accent); }
+    .val-badge { font-size: 0.78rem; color: var(--accent); min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+
+    /* Gear List */
+    .gear-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+    .gear-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 10px; border-radius: 6px; background: var(--bg-dark);
+      border: 1px solid var(--border); cursor: pointer; transition: 0.15s;
+    }
+    .gear-item:hover { border-color: var(--accent); }
+    .gear-item.active { border-color: var(--accent); background: rgba(56, 189, 248, 0.14); }
+    .gear-item-left { display: flex; align-items: center; gap: 8px; font-size: 0.84rem; font-weight: 600; }
+    .color-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+    .gear-meta { font-size: 0.75rem; color: var(--text-muted); }
+
+    /* Buttons */
+    .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    button {
+      flex: 1; padding: 8px 10px; border: none; border-radius: 6px; font-size: 0.8rem;
+      font-weight: 600; cursor: pointer; transition: 0.15s; background: var(--card-bg); color: var(--text-main);
+      border: 1px solid var(--border);
+    }
+    button:hover { background: #475569; }
+    button.primary { background: var(--accent); color: #0f172a; border-color: var(--accent); }
+    button.primary:hover { background: var(--accent-hover); color: #fff; }
+    button.danger { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border-color: var(--err); }
+    button.danger:hover { background: var(--err); color: #fff; }
+
+    /* Main Viewport & Overlay */
+    #viewport { flex: 1; position: relative; height: 100vh; overflow: hidden; }
+    #compat-panel {
+      position: absolute; top: 16px; right: 16px; width: 360px; max-height: calc(100vh - 32px);
+      overflow-y: auto; background: rgba(30, 41, 59, 0.92); backdrop-filter: blur(8px);
+      border: 1px solid var(--border); border-radius: 8px; padding: 14px; z-index: 5;
+    }
+    .status-pill {
+      display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 700;
+    }
+    .status-ok { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid var(--ok); }
+    .status-warn { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid var(--warn); }
+    .status-err { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid var(--err); }
+
+    .diag-card {
+      background: rgba(15, 23, 42, 0.65); border: 1px solid var(--border);
+      border-radius: 6px; padding: 9px 10px; margin-bottom: 8px; font-size: 0.78rem;
+    }
+    .diag-card-header { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 4px; }
+    .diag-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; color: var(--text-muted); font-size: 0.74rem; }
+    .diag-grid span b { color: var(--text-main); }
+    .alert-box { margin-top: 6px; padding: 6px 8px; border-radius: 4px; font-size: 0.74rem; line-height: 1.35; }
+    .alert-warn { background: rgba(245, 158, 11, 0.15); border-left: 3px solid var(--warn); color: #fde68a; }
+    .alert-err { background: rgba(239, 68, 68, 0.15); border-left: 3px solid var(--err); color: #fecaca; }
+
+    #hud-bottom {
+      position: absolute; bottom: 16px; left: 16px; display: flex; gap: 8px;
+      background: rgba(30, 41, 59, 0.85); padding: 8px 12px; border-radius: 8px;
+      border: 1px solid var(--border); align-items: center; font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- LEFT SIDEBAR -->
+  <div id="sidebar">
+    <div>
+      <h1>⚙️ Gear Train & Print Studio</h1>
+      <p style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">
+        Parametric Involute Modeler, Mesh Checker & STL Generator
+      </p>
+    </div>
+
+    <!-- SHARED SYSTEM PARAMETERS -->
+    <div class="section">
+      <h2>1. Shared Meshing Standard</h2>
+      <div class="control-row">
+        <label title="Tooth size standard. All meshing gears MUST share the same module.">Module (m) [mm]</label>
+        <input type="number" id="sysModule" value="2.0" min="0.5" max="10" step="0.25" />
+      </div>
+      <div class="control-row">
+        <label title="20° is standard; 25° gives stronger teeth with less undercut.">Pressure Angle (α)</label>
+        <select id="sysPressureAngle">
+          <option value="14.5">14.5° (Legacy / Fine)</option>
+          <option value="20" selected>20.0° (ISO Standard)</option>
+          <option value="25">25.0° (High Torque)</option>
+        </select>
+      </div>
+      <div class="control-row">
+        <label title="Thins teeth slightly so 3D printed layers don't bind.">Backlash [mm]</label>
+        <input type="range" id="sysBacklash" min="0" max="0.6" step="0.02" value="0.16" />
+        <span class="val-badge" id="sysBacklashVal">0.16 mm</span>
+      </div>
+      <div class="control-row">
+        <label title="Expands shaft hole diameter to compensate for FDM inner-hole shrinkage.">Bore XY Compensation</label>
+        <input type="range" id="sysBoreTol" min="0" max="0.6" step="0.05" value="0.20" />
+        <span class="val-badge" id="sysBoreTolVal">+0.20 mm</span>
+      </div>
+      <div class="control-row">
+        <label title="Adds extra spacing between gear axles for printer tolerance.">Axle Center Clearance</label>
+        <input type="range" id="sysCenterTol" min="0" max="0.5" step="0.05" value="0.10" />
+        <span class="val-badge" id="sysCenterTolVal">+0.10 mm</span>
+      </div>
+    </div>
+
+    <!-- GEAR GROUP LIST -->
+    <div class="section">
+      <h2>2. Gear Group / Train</h2>
+      <div id="gearList" class="gear-list"></div>
+      <div class="btn-row">
+        <button class="primary" id="btnAddGear">+ Add Driven Gear</button>
+        <button class="danger" id="btnRemoveGear">Remove Selected</button>
+      </div>
+    </div>
+
+    <!-- ACTIVE GEAR PARAMETERS -->
+    <div class="section" id="activeGearSection">
+      <h2 id="activeGearTitle">3. Selected Gear Settings</h2>
+      <div class="control-row">
+        <label>Number of Teeth (N)</label>
+        <input type="number" id="gearTeeth" value="16" min="6" max="160" step="1" />
+      </div>
+      <div class="control-row">
+        <label>Gear Thickness [mm]</label>
+        <input type="number" id="gearThickness" value="8" min="2" max="50" step="1" />
+      </div>
+      <div class="control-row" id="parentGearRow">
+        <label>Driven By (Parent)</label>
+        <select id="gearParent"></select>
+      </div>
+      <div class="control-row" id="orbitAngleRow">
+        <label>Placement Angle (°)</label>
+        <input type="range" id="gearAngle" min="-180" max="180" step="5" value="0" />
+        <span class="val-badge" id="gearAngleVal">0°</span>
+      </div>
+      <div class="control-row">
+        <label>Shaft / Bore Profile</label>
+        <select id="gearBoreType">
+          <option value="dshaft">D-Shaft (NEMA17 / Motor)</option>
+          <option value="round">Round Shaft / Bearing</option>
+          <option value="hex">Hex Nut / Hex Axle</option>
+          <option value="keyway">Keyed Shaft</option>
+        </select>
+      </div>
+      <div class="control-row">
+        <label>Nominal Bore Ø [mm]</label>
+        <input type="number" id="gearBoreDia" value="5.0" min="1.5" max="50" step="0.5" />
+      </div>
+      <div class="control-row" id="dFlatRow">
+        <label>D-Flat Cut Depth [mm]</label>
+        <input type="number" id="gearDFlat" value="0.5" min="0.2" max="5.0" step="0.1" />
+      </div>
+      <div class="control-row">
+        <label>Weight-Saving Cutouts</label>
+        <input type="checkbox" id="gearCutouts" checked style="width:18px;height:18px;accent-color:var(--accent);" />
+      </div>
+    </div>
+
+    <!-- EXPORT PANEL -->
+    <div class="section">
+      <h2>4. 3D Print STL Export</h2>
+      <div class="btn-row" style="margin-bottom: 8px;">
+        <button class="primary" id="btnExportSelected">Export Selected (.STL)</button>
+        <button class="primary" id="btnExportAll">Export All Gears (.STL)</button>
+      </div>
+      <div class="btn-row">
+        <button id="btnExportJig" title="Generates a flat 3D-printable plate with test pins at exact center-to-center distances.">
+          📐 Export Test-Fit Baseplate Jig (.STL)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3D VIEWPORT -->
+  <div id="viewport">
+    <!-- COMPATIBILITY & ENGINEERING OVERLAY -->
+    <div id="compat-panel">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <h2 style="margin:0; border:none;">Compatibility & Mesh Report</h2>
+        <span id="overallStatus" class="status-pill status-ok">READY</span>
+      </div>
+      <div id="diagnosticsContainer"></div>
+    </div>
+
+    <!-- BOTTOM ANIMATION CONTROLS -->
+    <div id="hud-bottom">
+      <button id="btnToggleAnim" style="min-width:95px;">⏸ Pause</button>
+      <label>Driver RPM:</label>
+      <input type="range" id="animSpeed" min="-60" max="60" value="15" step="1" style="width:110px; accent-color:var(--accent);" />
+      <span id="animSpeedVal" class="val-badge">15 RPM</span>
+      <button id="btnTopView">Top View (Mesh Check)</button>
+      <button id="btnIsoView">3D Iso View</button>
+    </div>
+  </div>
+
+<script>
+// ============================================================================
+// 1. STATE & DEFAULT GEAR TRAIN CONFIGURATION
+// ============================================================================
+const GEAR_COLORS = [0x38bdf8, 0xf97316, 0x22c55e, 0xa855f7, 0xeab308, 0xec4899];
+
+const state = {
+  module: 2.0,
+  pressureAngle: 20.0,
+  backlash: 0.16,
+  boreTol: 0.20,
+  centerTol: 0.10,
+  selectedIndex: 0,
+  isPlaying: true,
+  driverRPM: 15,
+  driverPhase: 0,
+  gears: [
+    {
+      id: 1,
+      name: "Gear 1 (Driver)",
+      teeth: 16,
+      thickness: 8,
+      parentIndex: -1,
+      placementAngle: 0,
+      boreType: "dshaft",
+      boreDia: 5.0,
+      dFlat: 0.5,
+      cutouts: false
+    },
+    {
+      id: 2,
+      name: "Gear 2 (Driven)",
+      teeth: 32,
+      thickness: 8,
+      parentIndex: 0,
+      placementAngle: 0,
+      boreType: "round",
+      boreDia: 5.0,
+      dFlat: 0.5,
+      cutouts: true
+    }
+  ]
+};
+
+// ============================================================================
+// 2. THREE.JS SCENE SETUP
+// ============================================================================
+const viewport = document.getElementById('viewport');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0f172a);
+
+const camera = new THREE.PerspectiveCamera(45, viewport.clientWidth / viewport.clientHeight, 0.1, 2000);
+camera.position.set(0, -110, 120);
+camera.up.set(0, 0, 1);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+viewport.appendChild(renderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+// Lighting
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight1.position.set(80, -80, 120);
+scene.add(dirLight1);
+const dirLight2 = new THREE.DirectionalLight(0x93c5fd, 0.4);
+dirLight2.position.set(-80, 80, -60);
+scene.add(dirLight2);
+
+// Build Plate Grid (XY plane)
+const gridHelper = new THREE.GridHelper(300, 30, 0x38bdf8, 0x1e293b);
+gridHelper.rotation.x = Math.PI / 2;
+gridHelper.position.z = -0.2;
+scene.add(gridHelper);
+
+const gearGroup3D = new THREE.Group();
+scene.add(gearGroup3D);
+
+const pitchCircleGroup = new THREE.Group();
+scene.add(pitchCircleGroup);
+
+// ============================================================================
+// 3. TRUE INVOLUTE GEAR GEOMETRY GENERATOR
+// ============================================================================
+function inv(angleRad) {
+  return Math.tan(angleRad) - angleRad;
+}
+
+function createBorePath(boreType, effectiveDia, dFlat) {
+  const path = new THREE.Path();
+  const r = effectiveDia / 2;
+
+  if (boreType === 'round') {
+    path.absarc(0, 0, r, 0, Math.PI * 2, true);
+  } else if (boreType === 'dshaft') {
+    const flatX = Math.max(-r * 0.8, r - dFlat);
+    const phi = Math.acos(Math.min(0.99, flatX / r));
+    // Clockwise hole winding for Three.js shape holes
+    path.moveTo(flatX, r * Math.sin(phi));
+    path.absarc(0, 0, r, phi, 2 * Math.PI - phi, true);
+    path.lineTo(flatX, r * Math.sin(phi));
+  } else if (boreType === 'hex') {
+    // Effective diameter = flat-to-flat distance
+    const rCorner = r / Math.cos(Math.PI / 6);
+    for (let i = 0; i < 6; i++) {
+      const a = -i * (Math.PI / 3);
+      const px = rCorner * Math.cos(a);
+      const py = rCorner * Math.sin(a);
+      if (i === 0) path.moveTo(px, py);
+      else path.lineTo(px, py);
+    }
+    path.closePath();
+  } else if (boreType === 'keyway') {
+    const kwWidth = Math.max(1.5, effectiveDia * 0.28);
+    const kwDepth = kwWidth * 0.5;
+    const phi = Math.asin(Math.min(0.95, (kwWidth / 2) / r));
+    const xBase = r * Math.cos(phi);
+    path.moveTo(xBase, kwWidth / 2);
+    path.lineTo(r + kwDepth, kwWidth / 2);
+    path.lineTo(r + kwDepth, -kwWidth / 2);
+    path.lineTo(xBase, -kwWidth / 2);
+    path.absarc(0, 0, r, -phi, phi, true);
+  }
+  return path;
+}
+
+function buildInvoluteGearGeometry(gear, sys) {
+  const N = gear.teeth;
+  const m = sys.module;
+  const alpha = (sys.pressureAngle * Math.PI) / 180;
+
+  const pitchRadius = (m * N) / 2;
+  const baseRadius = pitchRadius * Math.cos(alpha);
+  const addendum = m;
+  const dedendum = 1.25 * m;
+  const outerRadius = pitchRadius + addendum;
+  const rootRadius = Math.max(0.8, pitchRadius - dedendum);
+
+  // Backlash reduces tooth thickness along the pitch circle
+  const linearBacklashPerGear = sys.backlash / 2;
+  const pitchToothAngle = (Math.PI / N) - (linearBacklashPerGear / pitchRadius);
+  const halfBaseToothAngle = (pitchToothAngle / 2) + inv(alpha);
+
+  const rStart = Math.max(baseRadius, rootRadius);
+  const invSteps = 12;
+
+  // Precompute single tooth half-angle profile beta(r)
+  const profileRadii = [];
+  const profileBetas = [];
+  for (let s = 0; s <= invSteps; s++) {
+    const r = rStart + (outerRadius - rStart) * (s / invSteps);
+    const phi = Math.acos(Math.min(1.0, baseRadius / r));
+    const beta = Math.max(0.0005, halfBaseToothAngle - inv(phi));
+    profileRadii.push(r);
+    profileBetas.push(beta);
+  }
+
+  const betaStart = profileBetas[0];
+  const shape = new THREE.Shape();
+
+  for (let i = 0; i < N; i++) {
+    const centerAngle = (i * 2 * Math.PI) / N;
+
+    // 1. Root point on right side of tooth
+    const aRootRight = centerAngle - betaStart;
+    const x0 = rootRadius * Math.cos(aRootRight);
+    const y0 = rootRadius * Math.sin(aRootRight);
+    if (i === 0) shape.moveTo(x0, y0);
+    else shape.lineTo(x0, y0);
+
+    // 2. Right involute flank (root -> tip, CCW increasing angle)
+    for (let s = 0; s <= invSteps; s++) {
+      const r = profileRadii[s];
+      const a = centerAngle - profileBetas[s];
+      shape.lineTo(r * Math.cos(a), r * Math.sin(a));
+    }
+
+    // 3. Left involute flank (tip -> root, CCW increasing angle)
+    for (let s = invSteps; s >= 0; s--) {
+      const r = profileRadii[s];
+      const a = centerAngle + profileBetas[s];
+      shape.lineTo(r * Math.cos(a), r * Math.sin(a));
+    }
+
+    // 4. Root point on left side of tooth & root arc to next tooth
+    const aRootLeft = centerAngle + betaStart;
+    const nextCenterAngle = ((i + 1) * 2 * Math.PI) / N;
+    const aNextRootRight = nextCenterAngle - betaStart;
+    shape.lineTo(rootRadius * Math.cos(aRootLeft), rootRadius * Math.sin(aRootLeft));
+    shape.absarc(0, 0, rootRadius, aRootLeft, aNextRootRight, false);
+  }
+  shape.closePath();
+
+  // Center Bore with 3D print XY compensation
+  const effectiveBoreDia = Math.min(rootRadius * 1.6, gear.boreDia + sys.boreTol);
+  shape.holes.push(createBorePath(gear.boreType, effectiveBoreDia, gear.dFlat));
+
+  // Optional Weight-Saving Cutout Holes for larger gears
+  const rimInner = rootRadius - 2.2 * m;
+  const hubOuter = (effectiveBoreDia / 2) + 2.5;
+  if (gear.cutouts && (rimInner - hubOuter) > 5.0) {
+    const holeCenterR = (rimInner + hubOuter) / 2;
+    const holeRadius = Math.min((rimInner - hubOuter) * 0.42, (2 * Math.PI * holeCenterR) / 14);
+    const numHoles = 6;
+    for (let h = 0; h < numHoles; h++) {
+      const ha = (h * 2 * Math.PI) / numHoles;
+      const holePath = new THREE.Path();
+      holePath.absarc(
+        holeCenterR * Math.cos(ha),
+        holeCenterR * Math.sin(ha),
+        holeRadius,
+        0,
+        Math.PI * 2,
+        true
+      );
+      shape.holes.push(holePath);
+    }
+  }
+
+  const extrudeSettings = {
+    depth: gear.thickness,
+    bevelEnabled: false,
+    curveSegments: 24
+  };
+
+  const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+  return {
+    geometry,
+    pitchRadius,
+    baseRadius,
+    outerRadius,
+    rootRadius,
+    tipThickness: 2 * outerRadius * profileBetas[invSteps]
+  };
+}
+
+// ============================================================================
+// 4. KINEMATICS, PHASE ALIGNMENT & COMPATIBILITY ENGINE
+// ============================================================================
+const gearMeshes = [];
+const gearComputed = [];
+
+function rebuildSceneAndDiagnostics() {
+  // Clear previous meshes
+  while (gearGroup3D.children.length) {
+    const obj = gearGroup3D.children.pop();
+    if (obj.geometry) obj.geometry.dispose();
+  }
+  while (pitchCircleGroup.children.length) {
+    const obj = pitchCircleGroup.children.pop();
+    if (obj.geometry) obj.geometry.dispose();
+  }
+  gearMeshes.length = 0;
+  gearComputed.length = 0;
+
+  // Compute positions, ratios, and build meshes
+  state.gears.forEach((gear, idx) => {
+    const info = buildInvoluteGearGeometry(gear, state);
+    let x = 0, y = 0, ratioFromDriver = 1.0, dirSign = 1;
+
+    if (idx > 0 && gear.parentIndex >= 0 && gear.parentIndex < idx) {
+      const parent = gearComputed[gear.parentIndex];
+      const angleRad = (gear.placementAngle * Math.PI) / 180;
+      const centerDist = parent.pitchRadius + info.pitchRadius + state.centerTol;
+      x = parent.x + centerDist * Math.cos(angleRad);
+      y = parent.y + centerDist * Math.sin(angleRad);
+      ratioFromDriver = parent.ratioFromDriver * (parent.teeth / gear.teeth);
+      dirSign = -parent.dirSign;
+    }
+
+    const color = GEAR_COLORS[idx % GEAR_COLORS.length];
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.38,
+      metalness: 0.2,
+      emissive: idx === state.selectedIndex ? color : 0x000000,
+      emissiveIntensity: idx === state.selectedIndex ? 0.22 : 0
+    });
+
+    const mesh = new THREE.Mesh(info.geometry, material);
+    mesh.position.set(x, y, 0);
+    gearGroup3D.add(mesh);
+    gearMeshes.push(mesh);
+
+    // Pitch Circle Reference Line
+    const pts = [];
+    for (let a = 0; a <= 64; a++) {
+      const rad = (a / 64) * Math.PI * 2;
+      pts.push(new THREE.Vector3(
+        x + info.pitchRadius * Math.cos(rad),
+        y + info.pitchRadius * Math.sin(rad),
+        gear.thickness + 0.3
+      ));
+    }
+    const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x94a3b8, transparent: true, opacity: 0.45 });
+    pitchCircleGroup.add(new THREE.Line(lineGeo, lineMat));
+
+    gearComputed.push({
+      ...gear,
+      ...info,
+      x,
+      y,
+      ratioFromDriver,
+      dirSign,
+      phaseAngle: 0
+    });
+  });
+
+  updateGearRotations(state.driverPhase);
+  renderCompatibilityReport();
+}
+
+function updateGearRotations(driverPhase) {
+  gearComputed.forEach((g, idx) => {
+    if (idx === 0 || g.parentIndex < 0) {
+      g.phaseAngle = driverPhase;
+    } else {
+      const parent = gearComputed[g.parentIndex];
+      const gamma = (g.placementAngle * Math.PI) / 180;
+      const Np = parent.teeth;
+      const Nk = g.teeth;
+      // Exact involute tooth-to-valley meshing phase equation
+      g.phaseAngle = gamma + Math.PI + (Np / Nk) * (gamma - parent.phaseAngle) - (Math.PI / Nk);
+    }
+    if (gearMeshes[idx]) {
+      gearMeshes[idx].rotation.z = g.phaseAngle;
+    }
+  });
+}
+
+function renderCompatibilityReport() {
+  const container = document.getElementById('diagnosticsContainer');
+  const statusEl = document.getElementById('overallStatus');
+  container.innerHTML = '';
+
+  let hasError = false;
+  let hasWarning = false;
+  const alphaRad = (state.pressureAngle * Math.PI) / 180;
+  const minTeethNoUndercut = Math.ceil(2 / Math.pow(Math.sin(alphaRad), 2));
+
+  // 1. Check Individual Gear Printability & Undercut
+  gearComputed.forEach((g, idx) => {
+    const warnings = [];
+    if (g.teeth < minTeethNoUndercut) {
+      hasWarning = true;
+      warnings.push(`Undercut Risk: ${g.teeth}T is below the ${minTeethNoUndercut}T threshold for a ${state.pressureAngle}° pressure angle. Increase teeth or switch to 25° PA.`);
+    }
+    if (g.tipThickness < 0.75) {
+      hasWarning = true;
+      warnings.push(`Thin Tooth Tip (${g.tipThickness.toFixed(2)} mm): May under-extrude on a standard 0.4 mm nozzle. Increase Module or reduce Backlash.`);
+    }
+    if (g.boreDia + state.boreTol >= g.rootRadius * 1.45) {
+      hasError = true;
+      warnings.push(`Wall Too Thin: Bore (${g.boreDia} mm) is too close to the tooth root (${(g.rootRadius * 2).toFixed(1)} mm Ø).`);
+    }
+
+    const rpm = (state.driverRPM * g.ratioFromDriver * g.dirSign).toFixed(1);
+    const card = document.createElement('div');
+    card.className = 'diag-card';
+    card.innerHTML = `
+      <div class="diag-card-header">
+        <span style="color:#${GEAR_COLORS[idx % GEAR_COLORS.length].toString(16).padStart(6,'0')}">● ${g.name} (${g.teeth}T)</span>
+        <span>${rpm} RPM</span>
+      </div>
+      <div class="diag-grid">
+        <span>Pitch Ø: <b>${(g.pitchRadius * 2).toFixed(2)} mm</b></span>
+        <span>Outer Ø: <b>${(g.outerRadius * 2).toFixed(2)} mm</b></span>
+        <span>Root Ø: <b>${(g.rootRadius * 2).toFixed(2)} mm</b></span>
+        <span>Coords: <b>(${g.x.toFixed(1)}, ${g.y.toFixed(1)})</b></span>
+      </div>
+      ${warnings.map(w => `<div class="alert-box alert-warn">⚠️ ${w}</div>`).join('')}
+    `;
+    container.appendChild(card);
+  });
+
+  // 2. Check Meshing Pairs (Contact Ratio, Center Distance, Ratio)
+  gearComputed.forEach((g, idx) => {
+    if (idx === 0 || g.parentIndex < 0) return;
+    const p = gearComputed[g.parentIndex];
+    const nominalCenter = p.pitchRadius + g.pitchRadius;
+    const actualCenter = nominalCenter + state.centerTol;
+
+    // Transverse Contact Ratio Formula
+    const term1 = Math.sqrt(Math.max(0, p.outerRadius ** 2 - p.baseRadius ** 2));
+    const term2 = Math.sqrt(Math.max(0, g.outerRadius ** 2 - g.baseRadius ** 2));
+    const contactRatio = (term1 + term2 - actualCenter * Math.sin(alphaRad)) / (Math.PI * state.module * Math.cos(alphaRad));
+
+    const stageRatio = (g.teeth / p.teeth).toFixed(2);
+    let crBadge = `<span style="color:#4ade80">${contactRatio.toFixed(2)} (Optimal)</span>`;
+    let crAlert = '';
+    if (contactRatio < 1.0) {
+      hasError = true;
+      crBadge = `<span style="color:#f87171">${contactRatio.toFixed(2)} (FAIL)</span>`;
+      crAlert = `<div class="alert-box alert-err">❌ Contact Ratio below 1.0: Teeth will skip! Increase tooth count or reduce Axle Center Clearance.</div>`;
+    } else if (contactRatio < 1.2) {
+      hasWarning = true;
+      crBadge = `<span style="color:#fbbf24">${contactRatio.toFixed(2)} (Low)</span>`;
+      crAlert = `<div class="alert-box alert-warn">⚠️ Contact Ratio under 1.2: Mesh works but may be noisy under load.</div>`;
+    }
+
+    const pairCard = document.createElement('div');
+    pairCard.className = 'diag-card';
+    pairCard.innerHTML = `
+      <div class="diag-card-header">
+        <span>🔗 Mesh: Gear ${g.parentIndex + 1} ➔ Gear ${idx + 1}</span>
+        <span>Ratio 1 : ${stageRatio}</span>
+      </div>
+      <div class="diag-grid">
+        <span>Axle Spacing: <b>${actualCenter.toFixed(2)} mm</b></span>
+        <span>Contact Ratio: <b>${crBadge}</b></span>
+      </div>
+      ${crAlert}
+    `;
+    container.appendChild(pairCard);
+  });
+
+  // 3. Check Non-Linked Gear Collisions in the Group
+  for (let i = 0; i < gearComputed.length; i++) {
+    for (let j = i + 1; j < gearComputed.length; j++) {
+      const gA = gearComputed[i];
+      const gB = gearComputed[j];
+      const isLinked = (gB.parentIndex === i) || (gA.parentIndex === j);
+      if (!isLinked) {
+        const dist = Math.hypot(gA.x - gB.x, gA.y - gB.y);
+        const minSafeDist = gA.outerRadius + gB.outerRadius;
+        if (dist < minSafeDist) {
+          hasError = true;
+          const colCard = document.createElement('div');
+          colCard.className = 'diag-card';
+          colCard.innerHTML = `
+            <div class="alert-box alert-err">
+              ❌ <b>Collision Detected:</b> ${gA.name} and ${gB.name} overlap (Distance: ${dist.toFixed(1)} mm, Required Clearance: ${minSafeDist.toFixed(1)} mm). Adjust the Placement Angle (°) slider!
+            </div>
+          `;
+          container.prepend(colCard);
+        }
+      }
+    }
+  }
+
+  // Update overall status badge
+  if (hasError) {
+    statusEl.textContent = 'COLLISION / ERROR';
+    statusEl.className = 'status-pill status-err';
+  } else if (hasWarning) {
+    statusEl.textContent = 'CHECK WARNINGS';
+    statusEl.className = 'status-pill status-warn';
+  } else {
+    statusEl.textContent = '100% COMPATIBLE';
+    statusEl.className = 'status-pill status-ok';
+  }
+}
+
+// ============================================================================
+// 5. UI BINDINGS & INTERACTIVITY
+// ============================================================================
+function renderGearListUI() {
+  const listEl = document.getElementById('gearList');
+  listEl.innerHTML = '';
+
+  state.gears.forEach((g, idx) => {
+    const item = document.createElement('div');
+    item.className = 'gear-item' + (idx === state.selectedIndex ? ' active' : '');
+    const colorHex = '#' + GEAR_COLORS[idx % GEAR_COLORS.length].toString(16).padStart(6, '0');
+    const parentLabel = idx === 0 ? 'Motor Driver' : `Driven by G${g.parentIndex + 1}`;
+    item.innerHTML = `
+      <div class="gear-item-left">
+        <span class="color-dot" style="background:${colorHex}"></span>
+        <span>G${idx + 1}: ${g.teeth} Teeth</span>
+      </div>
+      <span class="gear-meta">${parentLabel}</span>
+    `;
+    item.onclick = () => {
+      state.selectedIndex = idx;
+      syncActiveGearControls();
+      renderGearListUI();
+      rebuildSceneAndDiagnostics();
+    };
+    listEl.appendChild(item);
+  });
+}
+
+function syncActiveGearControls() {
+  const idx = state.selectedIndex;
+  const g = state.gears[idx];
+  document.getElementById('activeGearTitle').textContent = `3. Gear ${idx + 1} Settings (${g.teeth}T)`;
+  document.getElementById('gearTeeth').value = g.teeth;
+  document.getElementById('gearThickness').value = g.thickness;
+  document.getElementById('gearBoreType').value = g.boreType;
+  document.getElementById('gearBoreDia').value = g.boreDia;
+  document.getElementById('gearDFlat').value = g.dFlat;
+  document.getElementById('gearCutouts').checked = g.cutouts;
+  document.getElementById('dFlatRow').style.display = g.boreType === 'dshaft' ? 'flex' : 'none';
+
+  const parentRow = document.getElementById('parentGearRow');
+  const angleRow = document.getElementById('orbitAngleRow');
+  if (idx === 0) {
+    parentRow.style.display = 'none';
+    angleRow.style.display = 'none';
+  } else {
+    parentRow.style.display = 'flex';
+    angleRow.style.display = 'flex';
+    const parentSelect = document.getElementById('gearParent');
+    parentSelect.innerHTML = '';
+    for (let p = 0; p < idx; p++) {
+      const opt = document.createElement('option');
+      opt.value = p;
+      opt.textContent = `Gear ${p + 1} (${state.gears[p].teeth}T)`;
+      if (p === g.parentIndex) opt.selected = true;
+      parentSelect.appendChild(opt);
+    }
+    document.getElementById('gearAngle').value = g.placementAngle;
+    document.getElementById('gearAngleVal').textContent = `${g.placementAngle}°`;
+  }
+}
+
+// System input listeners
+document.getElementById('sysModule').addEventListener('input', e => {
+  state.module = Math.max(0.4, parseFloat(e.target.value) || 2.0);
+  rebuildSceneAndDiagnostics();
+});
+document.getElementById('sysPressureAngle').addEventListener('change', e => {
+  state.pressureAngle = parseFloat(e.target.value);
+  rebuildSceneAndDiagnostics();
+});
+document.getElementById('sysBacklash').addEventListener('input', e => {
+  state.backlash = parseFloat(e.target.value);
+  document.getElementById('sysBacklashVal').textContent = `${state.backlash.toFixed(2)} mm`;
+  rebuildSceneAndDiagnostics();
+});
+document.getElementById('sysBoreTol').addEventListener('input', e => {
+  state.boreTol = parseFloat(e.target.value);
+  document.getElementById('sysBoreTolVal').textContent = `+${state.boreTol.toFixed(2)} mm`;
+  rebuildSceneAndDiagnostics();
+});
+document.getElementById('sysCenterTol').addEventListener('input', e => {
+  state.centerTol = parseFloat(e.target.value);
+  document.getElementById('sysCenterTolVal').textContent = `+${state.centerTol.toFixed(2)} mm`;
+  rebuildSceneAndDiagnostics();
+});
+
+// Active gear listeners
+document.getElementById('gearTeeth').addEventListener('input', e => {
+  const val = Math.max(6, Math.min(200, parseInt(e.target.value) || 12));
+  state.gears[state.selectedIndex].teeth = val;
+  renderGearListUI();
+  rebuildSceneAndDiagnostics();
+});
+document.getElementById('gearThickness').addEventListener('input', e => {
+  state.gears[state.selectedIndex].thickness = Math.max(1, parseFloat(e.target.value) || 8);
+  rebuildSceneAndDiagnostics();
+});
+document.getElementById('gearParent').addEventListener('change', e => {
+  state.gears[state.selectedIndex].parentIndex = parseInt(e.target.value);
+  renderGearListUI();
+  rebuildSceneAndDiagnostics();
+});
+document.getElementById('gearAngle').addEventListener('input', e => {
+  const ang = parseFloat(e.target.value);
+  state.gears[state.selectedIndex].placementAngle = ang;
+  document.getElementById('gearAngleVal').textContent = `${ang}°`;
+  rebuildSceneAndDiagnostics();
+});
+document.getElementById('gearBoreType').addEventListener('change', e => {
+  state.gears[state.selectedIndex].boreType = e.target.value;
+  syncActiveGearControls();
+  rebuildSceneAndDiagnostics();
+});
+document.getElementById('gearBoreDia').addEventListener('input', e => {
+  state.gears[state.selectedIndex].boreDia = Math.max(1, parseFloat(e.target.value) || 5);
+  rebuildSceneAndDiagnostics();
+});
+document.getElementById('gearDFlat').addEventListener('input', e => {
+  state.gears[state.selectedIndex].dFlat = Math.max(0.1, parseFloat(e.target.value) || 0.5);
+  rebuildSceneAndDiagnostics();
+});
+document.getElementById('gearCutouts').addEventListener('change', e => {
+  state.gears[state.selectedIndex].cutouts = e.target.checked;
+  rebuildSceneAndDiagnostics();
+});
+
+// Add / Remove Gear
+document.getElementById('btnAddGear').addEventListener('click', () => {
+  const newIdx = state.gears.length;
+  const parentIdx = state.selectedIndex;
+  // Pick a default angle that avoids immediate overlap
+  const defaultAngles = [0, 60, -60, 120, -120, 90];
+  state.gears.push({
+    id: Date.now(),
+    name: `Gear ${newIdx + 1}`,
+    teeth: 24,
+    thickness: state.gears[parentIdx].thickness,
+    parentIndex: parentIdx,
+    placementAngle: defaultAngles[(newIdx - 1) % defaultAngles.length],
+    boreType: "round",
+    boreDia: 5.0,
+    dFlat: 0.5,
+    cutouts: true
+  });
+  state.selectedIndex = newIdx;
+  renderGearListUI();
+  syncActiveGearControls();
+  rebuildSceneAndDiagnostics();
+});
+
+document.getElementById('btnRemoveGear').addEventListener('click', () => {
+  if (state.gears.length <= 1) return alert("You must keep at least 1 gear in the group.");
+  const remIdx = state.selectedIndex;
+  if (remIdx === 0) return alert("Cannot delete Gear 1 (Driver). Select a driven gear to remove.");
+  state.gears.splice(remIdx, 1);
+  // Fix parent references for subsequent gears
+  state.gears.forEach((g, idx) => {
+    g.name = idx === 0 ? "Gear 1 (Driver)" : `Gear ${idx + 1}`;
+    if (g.parentIndex >= idx) g.parentIndex = idx - 1;
+  });
+  state.selectedIndex = Math.max(0, remIdx - 1);
+  renderGearListUI();
+  syncActiveGearControls();
+  rebuildSceneAndDiagnostics();
+});
+
+// ============================================================================
+// 6. STL EXPORT & TEST-FIT BASEPLATE JIG GENERATOR
+// ============================================================================
+const stlExporter = new THREE.STLExporter();
+
+function downloadSTL(meshObj, filename) {
+  const stlData = stlExporter.parse(meshObj, { binary: true });
+  const blob = new Blob([stlData], { type: 'application/octet-stream' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+}
+
+document.getElementById('btnExportSelected').addEventListener('click', () => {
+  const idx = state.selectedIndex;
+  const g = state.gears[idx];
+  const exportMesh = gearMeshes[idx].clone();
+  exportMesh.position.set(0, 0, 0);
+  exportMesh.rotation.set(0, 0, 0);
+  exportMesh.updateMatrixWorld(true);
+  downloadSTL(exportMesh, `Gear_${idx + 1}_${g.teeth}T_M${state.module}.stl`);
+});
+
+document.getElementById('btnExportAll').addEventListener('click', () => {
+  state.gears.forEach((g, idx) => {
+    setTimeout(() => {
+      const exportMesh = gearMeshes[idx].clone();
+      exportMesh.position.set(0, 0, 0);
+      exportMesh.rotation.set(0, 0, 0);
+      exportMesh.updateMatrixWorld(true);
+      downloadSTL(exportMesh, `Gear_${idx + 1}_${g.teeth}T_M${state.module}.stl`);
+    }, idx * 250);
+  });
+});
+
+document.getElementById('btnExportJig').addEventListener('click', () => {
+  // Creates a 3D-printable baseplate with vertical shafts at exact gear centers
+  const jigGroup = new THREE.Group();
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+
+  gearComputed.forEach(g => {
+    minX = Math.min(minX, g.x - 12);
+    maxX = Math.max(maxX, g.x + 12);
+    minY = Math.min(minY, g.y - 12);
+    maxY = Math.max(maxY, g.y + 12);
+
+    // Vertical test post (0.15 mm clearance under nominal bore so gears spin freely)
+    const pinRadius = Math.max(1.0, (g.boreDia - 0.15) / 2);
+    const pinHeight = g.thickness + 5;
+    const pinGeo = new THREE.CylinderGeometry(pinRadius, pinRadius, pinHeight, 32);
+    pinGeo.rotateX(Math.PI / 2);
+    pinGeo.translate(g.x, g.y, pinHeight / 2);
+    jigGroup.add(new THREE.Mesh(pinGeo));
+  });
+
+  const baseW = (maxX - minX);
+  const baseH = (maxY - minY);
+  const baseThick = 3.0;
+  const baseGeo = new THREE.BoxGeometry(baseW, baseH, baseThick);
+  baseGeo.translate((minX + maxX) / 2, (minY + maxY) / 2, baseThick / 2);
+  jigGroup.add(new THREE.Mesh(baseGeo));
+  jigGroup.updateMatrixWorld(true);
+
+  downloadSTL(jigGroup, `Gear_Train_Test_Jig_M${state.module}.stl`);
+});
+
+// ============================================================================
+// 7. ANIMATION & CAMERA VIEW CONTROLS
+// ============================================================================
+document.getElementById('btnToggleAnim').addEventListener('click', e => {
+  state.isPlaying = !state.isPlaying;
+  e.target.textContent = state.isPlaying ? '⏸ Pause' : '▶ Play';
+});
+
+document.getElementById('animSpeed').addEventListener('input', e => {
+  state.driverRPM = parseFloat(e.target.value);
+  document.getElementById('animSpeedVal').textContent = `${state.driverRPM} RPM`;
+  renderCompatibilityReport();
+});
+
+document.getElementById('btnTopView').addEventListener('click', () => {
+  camera.position.set(20, 0, 140);
+  controls.target.set(20, 0, 0);
+  controls.update();
+});
+
+document.getElementById('btnIsoView').addEventListener('click', () => {
+  camera.position.set(20, -110, 110);
+  controls.target.set(20, 0, 0);
+  controls.update();
+});
+
+window.addEventListener('resize', () => {
+  camera.aspect = viewport.clientWidth / viewport.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+});
+
+// Initialize & Start Loop
+renderGearListUI();
+syncActiveGearControls();
+rebuildSceneAndDiagnostics();
+
+let lastTime = performance.now();
+function animate(now) {
+  requestAnimationFrame(animate);
+  const dt = (now - lastTime) / 1000;
+  lastTime = now;
+
+  if (state.isPlaying) {
+    const omega = (state.driverRPM * 2 * Math.PI) / 60;
+    state.driverPhase += omega * dt;
+    updateGearRotations(state.driverPhase);
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
