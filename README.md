@@ -16,7 +16,7 @@ Developed with the assistance of **Google's Argon model** to accelerate complex 
 
 ## 🚀 Live Demo
 
-[**Try the Gear Studio Live**]([https://kadlagop61.github.io/](https://kadlagop61.github.io/Gear_Generator/)) *(Replace with your GitHub Pages link)*
+[**Try the Gear Studio Live**](https://kadlagop61.github.io/](https://kadlagop61.github.io/Gear_Generator/) *(Replace with your GitHub Pages link)*
 
 ## 🛠️ Usage
 
